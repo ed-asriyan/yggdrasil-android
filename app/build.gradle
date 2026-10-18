@@ -7,7 +7,7 @@ android {
     compileSdkVersion 34
 
     defaultConfig {
-        applicationId "eu.neilalexander.yggdrasil"
+        applicationId "me.asriyan.yggmesh"
         minSdkVersion 21
         targetSdkVersion 34
         versionCode 21

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Yggdrasil</string>
+    <string name="app_name">YggMesh</string>
     <string name="copied_to_clipboard">Скопировано в буфер</string>
     <string name="dns_configured_servers_hint">Эти серверы DNS будут использоваться при включении Yggdrasil. Заметьте, что все запросы в DNS, даже о доменах не в Yggdrasil, будут отправляться на эти серверы.</string>
     <string name="dns_configured_servers_hint_empty">Yggdrasil не будет переопределять серверы DNS при старте. Все запросы DNS будут разрешаться серверами по умолчанию.</string>

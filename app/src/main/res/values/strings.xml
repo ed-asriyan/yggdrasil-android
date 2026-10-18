@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Yggdrasil</string>
+    <string name="app_name">YggMesh</string>
     <string name="copied_to_clipboard">Copied to clipboard</string>
     <string name="dns_configured_servers_hint">Use these DNS servers while Yggdrasil is running. Note that all DNS requests, including for non-Yggdrasil internet hostnames, will be sent to these servers.</string>
     <string name="dns_configured_servers_hint_empty">Yggdrasil will not configure any DNS servers when the service starts. All DNS requests will be resolved by the default resolver.</string>
