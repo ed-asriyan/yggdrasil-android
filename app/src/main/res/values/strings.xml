@@ -91,4 +91,9 @@
     <string name="set_keys">Set your own key</string>
     <string name="save">Save</string>
     <string name="no_browser_found_toast">No browser found to open the URL!</string>
+    <string name="clearnet_title">Clearnet (the Internet)</string>
+    <string name="clearnet_exits">Exits</string>
+    <string name="clearnet_off">Off</string>
+    <string name="clearnet_exits_label">Public keys of YggMesh exit nodes (64 hex digits), one per line. The first one is used.</string>
+    <string name="clearnet_hint">With an exit, all IPv4 traffic of this device goes over Yggdrasil to the exit node and from there to the Internet, so the device needs no Internet of its own: a nearby device with one is enough. Give the owner of the exit your public key above, the exit serves only the keys it knows.</string>
 </resources>

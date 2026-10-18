@@ -1,7 +1,6 @@
 package eu.neilalexander.yggdrasil
 
 import android.content.Context
-import mobile.Mobile
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -15,7 +14,7 @@ object ConfigurationProxy {
     operator fun invoke(applicationContext: Context): ConfigurationProxy {
         file = File(applicationContext.filesDir, "yggdrasil.conf")
         if (!file.exists()) {
-            val conf = Mobile.generateConfigJSON()
+            val conf = Yggdrasil.generateConfigJSON()
             if (file.createNewFile()) {
                 file.writeBytes(conf)
             }
@@ -25,13 +24,13 @@ object ConfigurationProxy {
     }
 
     fun resetJSON() {
-        val conf = Mobile.generateConfigJSON()
+        val conf = Yggdrasil.generateConfigJSON()
         file.writeBytes(conf)
         fix()
     }
 
     fun resetKeys() {
-        val newJson = JSONObject(String(Mobile.generateConfigJSON()))
+        val newJson = JSONObject(String(Yggdrasil.generateConfigJSON()))
         updateJSON { json ->
             json.put("PrivateKey", newJson.getString("PrivateKey"))
         }

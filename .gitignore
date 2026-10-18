@@ -18,3 +18,5 @@ local.properties
 /app/libs/yggdrasil-sources.jar
 /app/release/*
 /app/release
+/app/src/main/jniLibs
+/libs/yggdrasil-ng-jni/target

@@ -91,4 +91,9 @@
     <string name="set_keys">Установить свой ключ</string>
     <string name="save">Сохранить</string>
     <string name="no_browser_found_toast">Не найден браузер для открытия ссылки!</string>
+    <string name="clearnet_title">Клирнет (интернет)</string>
+    <string name="clearnet_exits">Выходы</string>
+    <string name="clearnet_off">Выкл.</string>
+    <string name="clearnet_exits_label">Публичные ключи exit-нод YggMesh (64 hex-символа), по одному на строку. Используется первый.</string>
+    <string name="clearnet_hint">С выходом весь IPv4-трафик устройства идёт через Yggdrasil на exit-ноду и оттуда в интернет, так что собственный интернет устройству не нужен: хватит соседнего устройства с ним. Передайте владельцу exit-ноды ваш публичный ключ выше: exit обслуживает только известные ему ключи.</string>
 </resources>

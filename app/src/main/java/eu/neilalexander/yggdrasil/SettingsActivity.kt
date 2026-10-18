@@ -16,7 +16,9 @@ import android.view.LayoutInflater
 import android.view.View
 import android.widget.*
 import androidx.appcompat.widget.LinearLayoutCompat
+import androidx.core.content.edit
 import androidx.core.widget.doOnTextChanged
+import androidx.preference.PreferenceManager
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import org.json.JSONObject
 
@@ -107,6 +109,27 @@ class SettingsActivity : AppCompatActivity() {
             builder.show()
         }
 
+        findViewById<View>(R.id.clearnetExitsRow).setOnClickListener {
+            val view = inflater.inflate(R.layout.dialog_clearnet_exits, null)
+            val exits = view.findViewById<EditText>(R.id.clearnet_exits)
+            exits.setText(Clearnet.exits(this).joinToString("\n"))
+            val builder: AlertDialog.Builder = AlertDialog.Builder(ContextThemeWrapper(this, R.style.YggdrasilDialogs))
+            builder.setTitle(getString(R.string.clearnet_exits))
+            builder.setView(view)
+            builder.setPositiveButton(getString(R.string.save)) { dialog, _ ->
+                val keys = Clearnet.parseExits(exits.text.toString())
+                PreferenceManager.getDefaultSharedPreferences(this).edit {
+                    putString(KEY_CLEARNET_EXITS, keys.joinToString(" "))
+                }
+                updateView()
+                dialog.dismiss()
+            }
+            builder.setNegativeButton(getString(R.string.cancel)) { dialog, _ ->
+                dialog.cancel()
+            }
+            builder.show()
+        }
+
         publicKeyLabel.setOnLongClickListener {
             val clipboard: ClipboardManager = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
             val clip = ClipData.newPlainText("public key", publicKeyLabel.text)
@@ -132,6 +155,10 @@ class SettingsActivity : AppCompatActivity() {
             key = key.substring(key.length / 2)
         }
         publicKeyLabel.text = key
+
+        val exits = Clearnet.exits(this)
+        findViewById<TextView>(R.id.clearnetExitsValue).text =
+            if (exits.isEmpty()) getString(R.string.clearnet_off) else exits.size.toString()
     }
 
     override fun onResume() {

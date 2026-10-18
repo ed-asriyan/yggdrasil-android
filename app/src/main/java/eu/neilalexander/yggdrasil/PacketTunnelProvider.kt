@@ -1,6 +1,7 @@
 package eu.neilalexander.yggdrasil
 
 import android.content.Intent
+import android.net.ConnectivityManager
 import android.net.VpnService
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -12,8 +13,10 @@ import androidx.preference.PreferenceManager
 import eu.neilalexander.yggdrasil.YggStateReceiver.Companion.YGG_STATE_INTENT
 import eu.neilalexander.yggdrasil.mesh.NearbyMesh
 import eu.neilalexander.yggdrasil.mesh.PREF_KEY_NEARBY_MESH
-import mobile.Yggdrasil
 import org.json.JSONArray
+import org.json.JSONObject
+import java.net.Inet6Address
+import java.net.NetworkInterface
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
@@ -113,8 +116,23 @@ open class PacketTunnelProvider: VpnService() {
             acquire()
         }
 
-        Log.d(TAG, config.getJSON().toString())
-        yggdrasil.startJSON(config.getJSONByteArray())
+        val json = JSONObject(config.getJSON().toString())
+        val privateKey = json.optString("PrivateKey")
+        val publicKey = privateKey.substring(privateKey.length / 2)
+        val exit = Clearnet.activeExit(this)
+        if (exit != null) {
+            json.put("TunnelRouting", Clearnet.tunnelRouting(publicKey, exit))
+        }
+        try {
+            yggdrasil.startJSON(json.toString().toByteArray(Charsets.UTF_8), networkInterfaces())
+        } catch (e: Exception) {
+            Log.e(TAG, "Starting Yggdrasil failed: $e")
+            multicastLock?.release()
+            started.set(false)
+            stopForeground(true)
+            stopSelf()
+            return
+        }
 
         val address = yggdrasil.addressString
         val builder = Builder()
@@ -153,6 +171,16 @@ open class PacketTunnelProvider: VpnService() {
         }
         if (preferences.getBoolean(KEY_ENABLE_CHROME_FIX, false)) {
             builder.addRoute("2001:4860:4860::8888", 128)
+        }
+        if (exit != null) {
+            // All IPv4 goes to the exit over Yggdrasil (CKR). The app's own
+            // sockets, the peerings among them, stay outside of the VPN:
+            // through it they would need Yggdrasil to reach the exit.
+            builder.addAddress(Clearnet.ipv4ForKey(publicKey), 32)
+                .addRoute("0.0.0.0", 0)
+                .addDisallowedApplication(packageName)
+            Clearnet.dnsServers.forEach { builder.addDnsServer(it) }
+            Log.i(TAG, "Clearnet through exit $exit")
         }
 
         parcel = builder.establish()
@@ -238,9 +266,30 @@ open class PacketTunnelProvider: VpnService() {
         if (!started.get()) {
             return
         }
+        yggdrasil.updateNetworkInterfaces(networkInterfaces())
         yggdrasil.retryPeersNow()
         // Picks up permissions granted since the start.
         nearbyMesh?.refresh()
+    }
+
+    /** Interfaces for multicast discovery: Android restricts their enumeration in native code. */
+    private fun networkInterfaces(): String {
+        val connectivity = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val result = JSONArray()
+        @Suppress("DEPRECATION")
+        for (network in connectivity.allNetworks) {
+            val properties = connectivity.getLinkProperties(network) ?: continue
+            val name = properties.interfaceName ?: continue
+            val index = try { NetworkInterface.getByName(name)?.index } catch (_: Exception) { null } ?: continue
+            val addresses = JSONArray()
+            properties.linkAddresses
+                .map { it.address }
+                .filter { it is Inet6Address && it.isLinkLocalAddress }
+                .forEach { addresses.put(it.hostAddress?.substringBefore('%')) }
+            if (addresses.length() == 0) continue
+            result.put(JSONObject().put("Name", name).put("Index", index).put("Addrs", addresses))
+        }
+        return result.toString()
     }
 
     private fun updater() {

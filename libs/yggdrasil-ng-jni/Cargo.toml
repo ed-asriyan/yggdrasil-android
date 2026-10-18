@@ -1,0 +1,40 @@
+[package]
+name = "yggdrasil-ng-jni"
+version = "0.1.0"
+edition = "2024"
+description = "JNI bindings of Yggdrasil-ng for the Android app"
+license = "MIT"
+
+[lib]
+name = "yggdrasil"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Yggdrasil-ng provides Crypto-Key Routing, which yggdrasil-go dropped in 0.4.
+yggdrasil = { git = "https://github.com/Revertron/Yggdrasil-ng", rev = "c9a54f1587bb133a06072596484c972a336db0d2", default-features = false, features = ["ckr"] }
+ironwood = { git = "https://github.com/Revertron/Yggdrasil-ng", rev = "c9a54f1587bb133a06072596484c972a336db0d2" }
+jni = "0.21"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+tokio-util = "0.7"
+serde_json = "1"
+toml = "1"
+hex = "0.4"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "std"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_log-sys = "0.3"
+
+# Yggdrasil-ng redirects salsa20 to its SIMD fork in its own workspace; a
+# patch only applies from the top-level workspace, so repeat it here.
+[patch.crates-io]
+salsa20 = { git = "https://github.com/Revertron/Yggdrasil-ng", rev = "c9a54f1587bb133a06072596484c972a336db0d2" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "unwind"

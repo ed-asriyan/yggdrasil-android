@@ -212,6 +212,81 @@
                         android:layout_marginBottom="2pt"
                         android:alpha="0.7"
                         android:paddingRight="8pt"
+                        android:text="@string/clearnet_title"
+                        android:textAllCaps="true"
+                        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+                        android:textSize="12sp" />
+
+                    <TableLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8pt"
+                        android:layout_marginLeft="8pt"
+                        android:layout_marginEnd="8pt"
+                        android:layout_marginRight="8pt"
+                        android:background="@drawable/rounded"
+                        android:divider="#46878787"
+                        android:dividerPadding="4pt"
+                        android:paddingLeft="4pt"
+                        android:paddingTop="2pt"
+                        android:paddingRight="4pt"
+                        android:paddingBottom="2pt"
+                        android:showDividers="middle">
+
+                        <TableRow
+                            android:id="@+id/clearnetExitsRow"
+                            style="@style/SelectableItemStyle">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/clearnet_exits"
+                                android:textColor="?attr/textDefault" />
+
+                            <Space
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="2" />
+
+                            <TextView
+                                android:id="@+id/clearnetExitsValue"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:alpha="0.7"
+                                android:text="@string/clearnet_off" />
+                        </TableRow>
+                    </TableLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="16pt"
+                        android:layout_marginLeft="16pt"
+                        android:layout_marginTop="2pt"
+                        android:layout_marginEnd="8pt"
+                        android:layout_marginRight="8pt"
+                        android:layout_marginBottom="4pt"
+                        android:alpha="0.7"
+                        android:paddingRight="8pt"
+                        android:text="@string/clearnet_hint"
+                        android:textAllCaps="false"
+                        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+                        android:textSize="12sp" />
+
+                    <Space
+                        android:layout_width="match_parent"
+                        android:layout_height="32px" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="16pt"
+                        android:layout_marginLeft="16pt"
+                        android:layout_marginEnd="8pt"
+                        android:layout_marginRight="8pt"
+                        android:layout_marginBottom="2pt"
+                        android:alpha="0.7"
+                        android:paddingRight="8pt"
                         android:text="@string/settings_config"
                         android:textAllCaps="true"
                         android:textAppearance="@style/TextAppearance.AppCompat.Small"
