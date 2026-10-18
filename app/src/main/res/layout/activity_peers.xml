@@ -235,6 +235,28 @@
                         </TableRow>
 
                         <TableRow
+                            android:id="@+id/enableNearbyMeshPanel"
+                            style="@style/SelectableSwitchItemStyle">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/connect_to_nearby_devices"
+                                android:textColor="?attr/textDefault" />
+
+                            <Space
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="2" />
+
+                            <Switch
+                                android:id="@+id/enableNearbyMesh"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content" />
+
+                        </TableRow>
+
+                        <TableRow
                             android:id="@+id/passwordTableRow"
                             android:layout_width="match_parent"
                             android:layout_height="match_parent"

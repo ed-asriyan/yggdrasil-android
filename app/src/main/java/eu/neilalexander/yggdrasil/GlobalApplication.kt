@@ -67,6 +67,15 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
     }
 }
 
+/** Makes a running service retry its peers and start the nearby transports it can now run. */
+fun reconnect(context: Context) {
+    val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+    if (!preferences.getBoolean(PREF_KEY_ENABLED, false)) return
+    val intent = Intent(context, PacketTunnelProvider::class.java)
+    intent.action = PacketTunnelProvider.ACTION_CONNECT
+    context.startService(intent)
+}
+
 fun migrateDnsServers(context: Context) {
     val preferences = PreferenceManager.getDefaultSharedPreferences(context)
     if (preferences.getInt(KEY_DNS_VERSION, 0) >= 1) {

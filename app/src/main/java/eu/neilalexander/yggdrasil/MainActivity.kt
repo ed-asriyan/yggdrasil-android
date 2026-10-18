@@ -18,6 +18,8 @@ import androidx.core.content.edit
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.preference.PreferenceManager
 import eu.neilalexander.yggdrasil.PacketTunnelProvider.Companion.STATE_INTENT
+import eu.neilalexander.yggdrasil.mesh.NearbyMesh
+import eu.neilalexander.yggdrasil.mesh.PREF_KEY_NEARBY_MESH
 import mobile.Mobile
 import org.json.JSONArray
 
@@ -39,6 +41,20 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, PacketTunnelProvider::class.java)
         intent.action = PacketTunnelProvider.ACTION_START
         startService(intent)
+        requestMeshPermissionsIfNeeded()
+    }
+
+    private val requestMeshPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        reconnect(this)
+    }
+
+    private fun requestMeshPermissionsIfNeeded() {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(this.baseContext)
+        if (!preferences.getBoolean(PREF_KEY_NEARBY_MESH, true)) return
+        val missing = NearbyMesh.missingPermissions(this)
+        if (missing.isNotEmpty()) {
+            requestMeshPermissions.launch(missing)
+        }
     }
 
     private var startVpnActivity = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->

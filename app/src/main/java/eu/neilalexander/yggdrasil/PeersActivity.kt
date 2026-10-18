@@ -18,11 +18,16 @@ import android.widget.Switch
 import android.widget.TableLayout
 import android.widget.TableRow
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.edit
 import androidx.core.widget.doOnTextChanged
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import androidx.preference.PreferenceManager
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import eu.neilalexander.yggdrasil.mesh.NearbyMesh
+import eu.neilalexander.yggdrasil.mesh.PREF_KEY_NEARBY_MESH
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
@@ -39,8 +44,13 @@ class PeersActivity : AppCompatActivity() {
     private lateinit var configuredTableLabel: TextView
     private lateinit var multicastListenSwitch: Switch
     private lateinit var multicastBeaconSwitch: Switch
+    private lateinit var nearbyMeshSwitch: Switch
     private lateinit var passwordEdit: EditText
     private lateinit var addPeerButton: ImageButton
+
+    private val requestMeshPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        reconnect(this)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,6 +88,21 @@ class PeersActivity : AppCompatActivity() {
         multicastListenPanel.setOnClickListener {
             multicastListenSwitch.toggle()
         }
+        val preferences = PreferenceManager.getDefaultSharedPreferences(this.baseContext)
+        nearbyMeshSwitch = findViewById(R.id.enableNearbyMesh)
+        nearbyMeshSwitch.isChecked = preferences.getBoolean(PREF_KEY_NEARBY_MESH, true)
+        nearbyMeshSwitch.setOnCheckedChangeListener { _, isChecked ->
+            preferences.edit { putBoolean(PREF_KEY_NEARBY_MESH, isChecked) }
+            val missing = NearbyMesh.missingPermissions(this)
+            if (isChecked && missing.isNotEmpty()) {
+                requestMeshPermissions.launch(missing)
+            }
+        }
+        val nearbyMeshPanel = findViewById<TableRow>(R.id.enableNearbyMeshPanel)
+        nearbyMeshPanel.setOnClickListener {
+            nearbyMeshSwitch.toggle()
+        }
+
         passwordEdit = findViewById(R.id.passwordEdit)
         passwordEdit.setText(config.multicastPassword)
 

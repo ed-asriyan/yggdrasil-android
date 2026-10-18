@@ -10,6 +10,8 @@ import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.preference.PreferenceManager
 import eu.neilalexander.yggdrasil.YggStateReceiver.Companion.YGG_STATE_INTENT
+import eu.neilalexander.yggdrasil.mesh.NearbyMesh
+import eu.neilalexander.yggdrasil.mesh.PREF_KEY_NEARBY_MESH
 import mobile.Yggdrasil
 import org.json.JSONArray
 import java.io.FileInputStream
@@ -44,6 +46,7 @@ open class PacketTunnelProvider: VpnService() {
     private var readerStream: FileInputStream? = null
     private var writerStream: FileOutputStream? = null
     private var multicastLock: WifiManager.MulticastLock? = null
+    private var nearbyMesh: NearbyMesh? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -172,6 +175,10 @@ open class PacketTunnelProvider: VpnService() {
             updater()
         }
 
+        if (preferences.getBoolean(PREF_KEY_NEARBY_MESH, true)) {
+            nearbyMesh = NearbyMesh(this, yggdrasil.publicKeyString, config.localListenPort).also { it.refresh() }
+        }
+
         var intent = Intent(YGG_STATE_INTENT)
         intent.putExtra("state", STATE_ENABLED)
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
@@ -181,6 +188,9 @@ open class PacketTunnelProvider: VpnService() {
         if (!started.compareAndSet(true, false)) {
             return
         }
+
+        nearbyMesh?.stop()
+        nearbyMesh = null
 
         yggdrasil.stop()
 
@@ -229,6 +239,8 @@ open class PacketTunnelProvider: VpnService() {
             return
         }
         yggdrasil.retryPeersNow()
+        // Picks up permissions granted since the start.
+        nearbyMesh?.refresh()
     }
 
     private fun updater() {

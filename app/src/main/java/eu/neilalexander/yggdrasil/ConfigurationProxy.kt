@@ -6,6 +6,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
+private const val LOCAL_LISTEN_PREFIX = "tcp://127.0.0.1:"
+
 object ConfigurationProxy {
     private lateinit var json: JSONObject
     private lateinit var file: File
@@ -54,6 +56,13 @@ object ConfigurationProxy {
             json.put("IfName", "none")
             json.put("IfMTU", 65535)
 
+            // Nearby mesh links are bridged into this loopback listener.
+            val listen = json.optJSONArray("Listen") ?: JSONArray()
+            if ((0 until listen.length()).none { listen.getString(it).startsWith(LOCAL_LISTEN_PREFIX) }) {
+                listen.put(LOCAL_LISTEN_PREFIX + (20000..59999).random())
+                json.put("Listen", listen)
+            }
+
             if (json.getJSONArray("MulticastInterfaces").get(0) is String) {
                 val ar = JSONArray()
                 ar.put(0, JSONObject("""
@@ -77,6 +86,16 @@ object ConfigurationProxy {
     fun getJSONByteArray(): ByteArray {
         return json.toString().toByteArray(Charsets.UTF_8)
     }
+
+    val localListenPort: Int
+        get() {
+            val listen = json.getJSONArray("Listen")
+            return (0 until listen.length())
+                .map { listen.getString(it) }
+                .first { it.startsWith(LOCAL_LISTEN_PREFIX) }
+                .removePrefix(LOCAL_LISTEN_PREFIX)
+                .toInt()
+        }
 
     var multicastListen: Boolean
         get() = (json.getJSONArray("MulticastInterfaces").get(0) as JSONObject).getBoolean("Listen")
