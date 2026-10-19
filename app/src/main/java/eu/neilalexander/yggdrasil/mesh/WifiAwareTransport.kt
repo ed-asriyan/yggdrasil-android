@@ -301,7 +301,7 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
             val socket = network.socketFactory.createSocket(address, port)
             socket.tcpNoDelay = true
             handler.post { failedAttempts.remove(peerId) }
-            mesh.attach(peerId, TRANSPORT, socket, socket.getInputStream(), socket.getOutputStream()) {
+            mesh.attach(peerId, TRANSPORT, true, socket, socket.getInputStream(), socket.getOutputStream()) {
                 handler.post { if (removeInitiated(peerId, callback)) release(callback) }
             }
         } catch (e: Exception) {
@@ -380,7 +380,7 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
                     continue
                 }
                 socket.tcpNoDelay = true
-                mesh.attach(null, TRANSPORT, socket, socket.getInputStream(), socket.getOutputStream())
+                mesh.attach(null, TRANSPORT, false, socket, socket.getInputStream(), socket.getOutputStream())
             }
         }
     }

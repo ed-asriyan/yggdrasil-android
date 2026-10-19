@@ -102,7 +102,10 @@ class NearbyMesh(
         return false
     }
 
-    /** Whether we hold an outbound link to the peer, over the given transport or over any. */
+    /**
+     * Whether we hold a link to the peer, over the given transport or over any.
+     * Inbound Wi-Fi Aware links do not count: their peer is not known.
+     */
     fun hasLink(peerId: String, transport: String? = null): Boolean = synchronized(bridges) {
         bridges.any { it.peerId == peerId && (transport == null || it.transport == transport) }
     }
@@ -115,19 +118,21 @@ class NearbyMesh(
 
     /**
      * Bridges a connected transport stream into the local Yggdrasil node.
-     * [peerId] is known on the opening side only. Returns false and closes the
-     * stream when the local listener refuses or the mesh is stopped.
+     * [peerId] is null where the transport does not tell it. Returns false and
+     * closes the stream when the local listener refuses, the mesh is stopped,
+     * or a link to the peer over the transport that both sides keep exists.
      */
     fun attach(
         peerId: String?,
         transport: String,
+        outbound: Boolean,
         remote: Closeable,
         input: InputStream,
         output: OutputStream,
         onClosed: () -> Unit = {},
     ): Boolean {
         val bridge = try {
-            LinkBridge(peerId, transport, remote, input, output, localPort) {
+            LinkBridge(peerId, transport, outbound, remote, input, output, localPort) {
                 bridges.remove(it)
                 onClosed()
             }
@@ -140,6 +145,18 @@ class NearbyMesh(
         if (!running) {
             bridge.close()
             return false
+        }
+        // When both sides opened a link, both keep the one the lower node ID opened
+        if (peerId != null) {
+            val existing = synchronized(bridges) { bridges.filter { it.peerId == peerId && it.transport == transport } }
+            if (existing.isNotEmpty()) {
+                val lowerOpened = outbound == isInitiatorFor(hexToBytes(peerId))
+                if (!lowerOpened) {
+                    bridge.close()
+                    return false
+                }
+                existing.forEach { it.close() }
+            }
         }
         bridges.add(bridge)
         bridge.start()

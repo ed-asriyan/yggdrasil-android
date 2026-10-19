@@ -23,6 +23,8 @@ private const val TAG = "MeshLinkBridge"
 class LinkBridge(
     val peerId: String?,
     val transport: String,
+    /** Whether we opened the transport stream. */
+    val outbound: Boolean,
     private val remote: Closeable,
     private val remoteIn: InputStream,
     private val remoteOut: OutputStream,
@@ -35,7 +37,7 @@ class LinkBridge(
     }
 
     fun start() {
-        Log.i(TAG, "Link up: $transport ${peerId ?: "(inbound)"}")
+        Log.i(TAG, "Link up: $transport ${peerId ?: "?"} ${if (outbound) "outbound" else "inbound"}")
         thread(name = "mesh-$transport-up") { pump(remoteIn, local.getOutputStream()) }
         thread(name = "mesh-$transport-down") { pump(local.getInputStream(), remoteOut) }
     }
@@ -58,7 +60,7 @@ class LinkBridge(
         if (!closed.compareAndSet(false, true)) {
             return
         }
-        Log.i(TAG, "Link down: $transport ${peerId ?: "(inbound)"}")
+        Log.i(TAG, "Link down: $transport ${peerId ?: "?"} ${if (outbound) "outbound" else "inbound"}")
         try { local.close() } catch (_: Exception) {}
         try { remote.close() } catch (_: Exception) {}
         onClosed(this)
