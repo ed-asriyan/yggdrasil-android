@@ -41,8 +41,9 @@ private const val BACKOFF_MS = 30_000L
  * opens the channel. Throughput is far below Wi-Fi Aware, so a peer that is
  * already linked over Wi-Fi Aware is not dialed over BLE.
  *
- * The advertisement is 31 bytes: 3 for flags, then service data with a 128-bit
- * UUID (18 bytes of header) carrying a 2-byte PSM and the 8-byte node ID.
+ * The advertisement carries the service UUID, which scans filter on (a filter
+ * every BLE stack offloads well), and the scan response its service data: the
+ * 2-byte PSM and the 8-byte node ID.
  */
 @SuppressLint("MissingPermission") // NearbyMesh starts this only once permissions are granted
 @RequiresApi(Build.VERSION_CODES.Q)
@@ -57,6 +58,12 @@ class BleTransport(private val context: Context, private val mesh: NearbyMesh) {
     private var server: BluetoothServerSocket? = null
     private var running = false
     private var stopped = false
+
+    /** What this transport is doing, for the diagnostics in Peers. */
+    @Volatile
+    var status = "starting"
+        private set
+    private val seen = ConcurrentHashMap.newKeySet<String>()
 
     private val connecting = ConcurrentHashMap.newKeySet<String>()
     private val backoff = ConcurrentHashMap<String, Long>()
@@ -73,6 +80,7 @@ class BleTransport(private val context: Context, private val mesh: NearbyMesh) {
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartFailure(errorCode: Int) {
             Log.w(TAG, "Advertising failed: $errorCode")
+            status = "advertising failed (error $errorCode)"
         }
     }
 
@@ -83,12 +91,15 @@ class BleTransport(private val context: Context, private val mesh: NearbyMesh) {
 
         override fun onScanFailed(errorCode: Int) {
             Log.w(TAG, "Scan failed: $errorCode")
+            status = "scan failed (error $errorCode)"
         }
     }
 
+    fun summary(): String = "$status, ${seen.size} seen"
+
     fun start() {
         context.registerReceiver(stateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
-        if (adapter?.isEnabled == true) up()
+        if (adapter?.isEnabled == true) up() else status = "Bluetooth is off"
     }
 
     fun stop() {
@@ -120,12 +131,22 @@ class BleTransport(private val context: Context, private val mesh: NearbyMesh) {
             val data = AdvertiseData.Builder()
                 .setIncludeDeviceName(false)
                 .setIncludeTxPowerLevel(false)
+                .addServiceUuid(SERVICE_UUID)
+                .build()
+            val response = AdvertiseData.Builder()
+                .setIncludeDeviceName(false)
+                .setIncludeTxPowerLevel(false)
                 .addServiceData(SERVICE_UUID, payload)
                 .build()
-            adapter.bluetoothLeAdvertiser?.startAdvertising(settings, data, advertiseCallback)
+            val advertiser = adapter.bluetoothLeAdvertiser
+            if (advertiser == null) {
+                status = "this device cannot advertise over BLE"
+            } else {
+                advertiser.startAdvertising(settings, data, response, advertiseCallback)
+            }
 
             val filter = ScanFilter.Builder()
-                .setServiceData(SERVICE_UUID, ByteArray(0), ByteArray(0))
+                .setServiceUuid(SERVICE_UUID)
                 .build()
             val scanSettings = ScanSettings.Builder()
                 .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
@@ -133,9 +154,11 @@ class BleTransport(private val context: Context, private val mesh: NearbyMesh) {
             adapter.bluetoothLeScanner?.startScan(listOf(filter), scanSettings, scanCallback)
 
             running = true
+            if (advertiser != null) status = "searching"
             Log.i(TAG, "Started on PSM $psm")
         } catch (e: Exception) {
             Log.w(TAG, "Starting failed: $e")
+            status = "failed to start: $e"
             down()
         }
     }
@@ -143,6 +166,7 @@ class BleTransport(private val context: Context, private val mesh: NearbyMesh) {
     @Synchronized
     private fun down() {
         running = false
+        if (!stopped) status = "Bluetooth is off"
         try { adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback) } catch (_: Exception) {}
         try { adapter?.bluetoothLeScanner?.stopScan(scanCallback) } catch (_: Exception) {}
         try { server?.close() } catch (_: Exception) {}
@@ -150,14 +174,16 @@ class BleTransport(private val context: Context, private val mesh: NearbyMesh) {
     }
 
     private fun found(result: ScanResult) {
+        // Without the scan response (passive scans, some stacks) the peer is not usable yet
         val data = result.scanRecord?.getServiceData(SERVICE_UUID) ?: return
         if (data.size != 2 + NODE_ID_LENGTH) return
         val buffer = ByteBuffer.wrap(data)
         val psm = buffer.short.toInt() and 0xffff
         val id = ByteArray(NODE_ID_LENGTH).also { buffer.get(it) }
+        val peerId = NearbyMesh.bytesToHex(id)
+        if (seen.add(peerId)) Log.i(TAG, "Found $peerId")
         if (!mesh.isInitiatorFor(id)) return
 
-        val peerId = NearbyMesh.bytesToHex(id)
         mesh.seenNearby(peerId)
         if (mesh.hasLink(peerId)) return
         val until = backoff[peerId]
@@ -173,6 +199,7 @@ class BleTransport(private val context: Context, private val mesh: NearbyMesh) {
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Connecting to $peerId failed: $e")
+                status = "connecting to ${peerId.take(8)} failed: ${e.message}"
                 backoff[peerId] = SystemClock.elapsedRealtime() + BACKOFF_MS
             } finally {
                 connecting.remove(peerId)

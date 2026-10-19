@@ -274,6 +274,9 @@ class PeersActivity : AppCompatActivity() {
         override fun onReceive(context: Context?, intent: Intent) {
             when (intent.getStringExtra("type")) {
                 "state" -> {
+                    intent.getStringExtra("mesh")?.let {
+                        findViewById<TextView>(R.id.nearbyMeshStatus).text = it
+                    }
                     if (intent.hasExtra("peers")) {
                         val peers1 = intent.getStringExtra("peers")
                         //Log.i("PeersActivity", "Peers json: $peers1")

@@ -41,9 +41,29 @@ class NearbyMesh(
     private val bridges = Collections.synchronizedSet(mutableSetOf<LinkBridge>())
     @Volatile
     private var wifiAware: WifiAwareTransport? = null
+    @Volatile
     private var ble: BleTransport? = null
     @Volatile
     private var running = false
+
+    /** One line per transport and the links, for the diagnostics in Peers. */
+    fun status(): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return "Nearby devices need Android 10+"
+        val aware = wifiAware?.summary() ?: when {
+            !WifiAwareTransport.isSupported(context) -> "not supported by this device"
+            !hasWifiAwarePermissions(context) -> "no permission"
+            else -> "not started"
+        }
+        val bt = ble?.summary() ?: when {
+            !BleTransport.isSupported(context) -> "not supported by this device"
+            !hasBlePermissions(context) -> "no permission"
+            else -> "not started"
+        }
+        val links = synchronized(bridges) { bridges.groupingBy { it.transport }.eachCount() }
+        return "Wi-Fi Aware: $aware\nBluetooth: $bt\n" +
+            "Links: ${links[WIFI_AWARE] ?: 0} Wi-Fi Aware, ${links[BLE] ?: 0} Bluetooth\n" +
+            "Node ID: ${bytesToHex(nodeId)}"
+    }
 
     /** Starts the transports that can run and are not running yet. Safe to call repeatedly. */
     @Synchronized

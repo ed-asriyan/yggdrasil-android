@@ -309,6 +309,7 @@ open class PacketTunnelProvider: VpnService() {
                 intent.putExtra("subnet", yggdrasil.subnetString)
                 intent.putExtra("pubkey", yggdrasil.publicKeyString)
                 intent.putExtra("peers", yggdrasil.peersJSON)
+                intent.putExtra("mesh", nearbyMesh?.status() ?: getString(R.string.nearby_mesh_off))
                 LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
             }
             val curTime = System.currentTimeMillis()

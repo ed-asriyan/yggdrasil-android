@@ -92,10 +92,17 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
     private val responded = ConcurrentHashMap<String, ConnectivityManager.NetworkCallback>()
     private val failedAttempts = HashMap<String, Int>()
 
+    /** What this transport is doing, for the diagnostics in Peers. */
+    @Volatile
+    private var status = "starting"
+    private val seen = ConcurrentHashMap.newKeySet<String>()
+
+    fun summary(): String = "$status, ${seen.size} seen"
+
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             handler.post {
-                if (manager.isAvailable) attach() else detach()
+                if (manager.isAvailable) attach() else unavailable()
             }
         }
     }
@@ -104,7 +111,7 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
         context.registerReceiver(stateReceiver, IntentFilter(WifiAwareManager.ACTION_WIFI_AWARE_STATE_CHANGED))
         handler.post {
             server = ServerSocket(0).also { startAccepting(it) }
-            if (manager.isAvailable) attach()
+            if (manager.isAvailable) attach() else unavailable()
         }
     }
 
@@ -119,6 +126,11 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
         }
     }
 
+    private fun unavailable() {
+        detach()
+        status = "unavailable (Wi-Fi off, hotspot on, or location off before Android 13)"
+    }
+
     private fun attach() {
         if (stopped || session != null) return
         manager.attach(object : AttachCallback() {
@@ -128,6 +140,7 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
                     return
                 }
                 Log.i(TAG, "Attached")
+                status = "searching"
                 session = s
                 publish()
                 subscribe()
@@ -136,6 +149,7 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
 
             override fun onAttachFailed() {
                 Log.w(TAG, "Attach failed, retrying")
+                status = "attach failed, retrying"
                 handler.postDelayed({ attach() }, RETRY_DELAY_MS)
             }
         }, handler)
@@ -201,11 +215,14 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
 
             override fun onSessionConfigFailed() {
                 Log.w(TAG, "Subscribing failed")
+                status = "subscribing failed"
             }
 
             override fun onServiceDiscovered(peer: PeerHandle, info: ByteArray, matchFilter: List<ByteArray>) {
                 val discovery = own ?: return
-                if (info.size != NODE_ID_LENGTH || !mesh.isInitiatorFor(info)) return
+                if (info.size != NODE_ID_LENGTH) return
+                if (seen.add(NearbyMesh.bytesToHex(info))) Log.i(TAG, "Found ${NearbyMesh.bytesToHex(info)}")
+                if (!mesh.isInitiatorFor(info)) return
                 initiate(discovery, peer, NearbyMesh.bytesToHex(info))
             }
 
@@ -252,14 +269,22 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
 
             override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
                 val info = capabilities.transportInfo as? WifiAwareNetworkInfo ?: return
-                val address = info.peerIpv6Addr ?: return
-                if (connecting || info.port <= 0) return
+                val address = info.peerIpv6Addr
+                if (address == null || info.port <= 0) {
+                    Log.w(TAG, "Data path to $peerId has no peer address or port")
+                    return
+                }
+                if (connecting) return
                 connecting = true
                 thread(name = "mesh-wifi-aware-connect") { connect(network, address, info.port, peerId, this) }
             }
 
             override fun onLost(network: Network) = retry(discovery, peer, peerId, this)
-            override fun onUnavailable() = retry(discovery, peer, peerId, this)
+            override fun onUnavailable() {
+                Log.w(TAG, "Data path to $peerId unavailable")
+                status = "data path to ${peerId.take(8)} failed"
+                retry(discovery, peer, peerId, this)
+            }
         }
         initiated[peerId] = Initiated(discovery, callback)
         request(specifier, callback)
@@ -281,6 +306,7 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
             }
         } catch (e: Exception) {
             Log.w(TAG, "Connecting to $peerId failed: $e")
+            status = "connecting to ${peerId.take(8)} failed: ${e.message}"
             handler.post { if (removeInitiated(peerId, callback)) release(callback) }
         }
     }

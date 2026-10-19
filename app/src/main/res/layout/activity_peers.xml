@@ -256,6 +256,20 @@
 
                         </TableRow>
 
+                        <TextView
+                            android:id="@+id/nearbyMeshStatus"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="4pt"
+                            android:paddingTop="2pt"
+                            android:paddingEnd="4pt"
+                            android:paddingBottom="4pt"
+                            android:alpha="0.7"
+                            android:fontFamily="monospace"
+                            android:text="@string/nearby_mesh_off"
+                            android:textIsSelectable="true"
+                            android:textSize="11sp" />
+
                         <TableRow
                             android:id="@+id/passwordTableRow"
                             android:layout_width="match_parent"
