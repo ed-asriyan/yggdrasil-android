@@ -25,6 +25,7 @@ import android.net.wifi.aware.WifiAwareSession
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.RequiresApi
 import java.net.Inet6Address
@@ -35,7 +36,7 @@ import kotlin.concurrent.thread
 private const val TAG = "MeshWifiAware"
 
 private const val SERVICE_NAME = "yggdrasil-mesh"
-private const val TRANSPORT = "wifi-aware"
+private const val TRANSPORT = WIFI_AWARE
 
 // Wi-Fi Aware only lets the responder announce a port over an encrypted data
 // path, so the data path needs a passphrase. It is not a secret: Yggdrasil
@@ -44,7 +45,8 @@ private const val PASSPHRASE = "yggdrasil-mesh-link"
 
 private const val NETWORK_TIMEOUT_MS = 30_000
 private const val RETRY_DELAY_MS = 10_000L
-private const val RESUBSCRIBE_DELAY_MS = 5 * 60_000L
+private const val RESUBSCRIBE_DELAY_MS = 2 * 60_000L
+private const val MIN_RESUBSCRIBE_INTERVAL_MS = 30_000L
 private const val MAX_ATTEMPTS = 3
 
 /**
@@ -54,6 +56,11 @@ private const val MAX_ATTEMPTS = 3
  * and both sides request a NAN data path: the publisher as responder, with a
  * TCP port, and the subscriber as initiator, which connects to that port over
  * the peer's link-local IPv6 address.
+ *
+ * A subscribe session reports each peer once, so a peer that left and came
+ * back is found only by a newer session. A new one starts every
+ * [RESUBSCRIBE_DELAY_MS], and at once when BLE sees a peer we hold no Wi-Fi
+ * Aware link to. Older sessions are closed once no data path of ours uses them.
  */
 @SuppressLint("MissingPermission") // NearbyMesh starts this only once permissions are granted
 @RequiresApi(Build.VERSION_CODES.Q)
@@ -71,13 +78,17 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
 
     private var session: WifiAwareSession? = null
     private var publishSession: PublishDiscoverySession? = null
-    private var subscribeSession: SubscribeDiscoverySession? = null
+    // Oldest first
+    private val subscribeSessions = ArrayList<SubscribeDiscoverySession>()
+    private var lastSubscribe = 0L
     private var server: ServerSocket? = null
     private var stopped = false
     private var messageId = 0
 
+    private class Initiated(val session: SubscribeDiscoverySession, val callback: ConnectivityManager.NetworkCallback)
+
     // Data path requests we hold, by peer node ID. Releasing one tears the data path down.
-    private val initiated = ConcurrentHashMap<String, ConnectivityManager.NetworkCallback>()
+    private val initiated = ConcurrentHashMap<String, Initiated>()
     private val responded = ConcurrentHashMap<String, ConnectivityManager.NetworkCallback>()
     private val failedAttempts = HashMap<String, Int>()
 
@@ -120,6 +131,7 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
                 session = s
                 publish()
                 subscribe()
+                scheduleResubscribe()
             }
 
             override fun onAttachFailed() {
@@ -131,14 +143,14 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
 
     private fun detach() {
         handler.removeCallbacksAndMessages(null)
-        (initiated.values + responded.values).forEach { release(it) }
+        (initiated.values.map { it.callback } + responded.values).forEach { release(it) }
         initiated.clear()
         responded.clear()
         failedAttempts.clear()
         publishSession?.close()
         publishSession = null
-        subscribeSession?.close()
-        subscribeSession = null
+        subscribeSessions.forEach { it.close() }
+        subscribeSessions.clear()
         session?.close()
         session = null
     }
@@ -164,43 +176,71 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
         }, handler)
     }
 
+    /** Finds the peers seen over BLE again over Wi-Fi Aware. */
+    fun rediscover(peerId: String) {
+        handler.post {
+            if (session == null || initiated.containsKey(peerId)) return@post
+            if (SystemClock.elapsedRealtime() - lastSubscribe < MIN_RESUBSCRIBE_INTERVAL_MS) return@post
+            subscribe()
+        }
+    }
+
     private fun subscribe() {
+        lastSubscribe = SystemClock.elapsedRealtime()
         val config = SubscribeConfig.Builder()
             .setServiceName(SERVICE_NAME)
             .build()
         session?.subscribe(config, object : DiscoverySessionCallback() {
+            private var own: SubscribeDiscoverySession? = null
+
             override fun onSubscribeStarted(s: SubscribeDiscoverySession) {
-                subscribeSession = s
-                scheduleResubscribe()
+                own = s
+                subscribeSessions.add(s)
+                closeUnusedSubscribeSessions()
+            }
+
+            override fun onSessionConfigFailed() {
+                Log.w(TAG, "Subscribing failed")
             }
 
             override fun onServiceDiscovered(peer: PeerHandle, info: ByteArray, matchFilter: List<ByteArray>) {
+                val discovery = own ?: return
                 if (info.size != NODE_ID_LENGTH || !mesh.isInitiatorFor(info)) return
-                initiate(peer, NearbyMesh.bytesToHex(info))
+                initiate(discovery, peer, NearbyMesh.bytesToHex(info))
             }
 
             override fun onSessionTerminated() {
-                subscribeSession = null
+                own?.let { subscribeSessions.remove(it) }
             }
         }, handler)
     }
 
-    // A subscribe session reports each peer once, so a peer that left and came
-    // back is found only by a new session. Restart it while it holds no links.
+    // Closing a session could tear down the data paths requested through it,
+    // so only the sessions without them go, and never the newest one.
+    private fun closeUnusedSubscribeSessions() {
+        val used = initiated.values.map { it.session }.toSet()
+        subscribeSessions.dropLast(1).filter { it !in used }.forEach {
+            it.close()
+            subscribeSessions.remove(it)
+        }
+    }
+
     private fun scheduleResubscribe() {
         handler.postDelayed({
-            if (initiated.isEmpty() && subscribeSession != null) {
-                subscribeSession?.close()
-                subscribeSession = null
-                subscribe()
-            } else {
-                scheduleResubscribe()
-            }
+            subscribe()
+            scheduleResubscribe()
         }, RESUBSCRIBE_DELAY_MS)
     }
 
-    private fun initiate(peer: PeerHandle, peerId: String) {
-        val discovery = subscribeSession ?: return
+    private fun removeInitiated(peerId: String, callback: ConnectivityManager.NetworkCallback): Boolean {
+        val entry = initiated[peerId] ?: return false
+        if (entry.callback !== callback) return false
+        initiated.remove(peerId)
+        return true
+    }
+
+    private fun initiate(discovery: SubscribeDiscoverySession, peer: PeerHandle, peerId: String) {
+        if (discovery !in subscribeSessions) return
         if (initiated.containsKey(peerId) || mesh.hasLink(peerId, TRANSPORT)) return
         discovery.sendMessage(peer, messageId++, mesh.nodeId)
 
@@ -218,10 +258,10 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
                 thread(name = "mesh-wifi-aware-connect") { connect(network, address, info.port, peerId, this) }
             }
 
-            override fun onLost(network: Network) = retry(peer, peerId, this)
-            override fun onUnavailable() = retry(peer, peerId, this)
+            override fun onLost(network: Network) = retry(discovery, peer, peerId, this)
+            override fun onUnavailable() = retry(discovery, peer, peerId, this)
         }
-        initiated[peerId] = callback
+        initiated[peerId] = Initiated(discovery, callback)
         request(specifier, callback)
     }
 
@@ -237,27 +277,32 @@ class WifiAwareTransport(private val context: Context, private val mesh: NearbyM
             socket.tcpNoDelay = true
             handler.post { failedAttempts.remove(peerId) }
             mesh.attach(peerId, TRANSPORT, socket, socket.getInputStream(), socket.getOutputStream()) {
-                handler.post { if (initiated.remove(peerId, callback)) release(callback) }
+                handler.post { if (removeInitiated(peerId, callback)) release(callback) }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Connecting to $peerId failed: $e")
-            handler.post { if (initiated.remove(peerId, callback)) release(callback) }
+            handler.post { if (removeInitiated(peerId, callback)) release(callback) }
         }
     }
 
-    private fun retry(peer: PeerHandle, peerId: String, callback: ConnectivityManager.NetworkCallback) {
+    private fun retry(
+        discovery: SubscribeDiscoverySession,
+        peer: PeerHandle,
+        peerId: String,
+        callback: ConnectivityManager.NetworkCallback,
+    ) {
         handler.post {
-            if (!initiated.remove(peerId, callback)) return@post
+            if (!removeInitiated(peerId, callback)) return@post
             release(callback)
             // The peer handle stays valid while the peer is in range. Once it is
-            // gone, give up: the resubscribe finds it again when it comes back.
+            // gone, give up: a newer subscribe session finds it when it comes back.
             val attempts = (failedAttempts[peerId] ?: 0) + 1
             if (attempts >= MAX_ATTEMPTS) {
                 failedAttempts.remove(peerId)
                 return@post
             }
             failedAttempts[peerId] = attempts
-            handler.postDelayed({ initiate(peer, peerId) }, RETRY_DELAY_MS)
+            handler.postDelayed({ initiate(discovery, peer, peerId) }, RETRY_DELAY_MS)
         }
     }
 

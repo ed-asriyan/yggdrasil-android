@@ -28,7 +28,7 @@ import kotlin.concurrent.thread
 
 private const val TAG = "MeshBle"
 
-private const val TRANSPORT = "ble"
+private const val TRANSPORT = BLE
 private val SERVICE_UUID = ParcelUuid(UUID.fromString("5b1c7f3e-9a4d-4f8b-b2e6-7d0a1c9e4f21"))
 
 // Do not dial a peer again sooner than this after a failed or closed link.
@@ -158,6 +158,7 @@ class BleTransport(private val context: Context, private val mesh: NearbyMesh) {
         if (!mesh.isInitiatorFor(id)) return
 
         val peerId = NearbyMesh.bytesToHex(id)
+        mesh.seenNearby(peerId)
         if (mesh.hasLink(peerId)) return
         val until = backoff[peerId]
         if (until != null && SystemClock.elapsedRealtime() < until) return

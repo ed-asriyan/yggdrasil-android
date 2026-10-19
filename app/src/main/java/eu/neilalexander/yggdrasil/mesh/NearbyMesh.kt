@@ -15,6 +15,9 @@ private const val TAG = "NearbyMesh"
 
 const val PREF_KEY_NEARBY_MESH = "nearby_mesh"
 
+const val WIFI_AWARE = "wifi-aware"
+const val BLE = "ble"
+
 // Length of the node ID that nearby transports advertise: a prefix of the
 // Yggdrasil public key, short enough to fit a BLE advertisement.
 const val NODE_ID_LENGTH = 8
@@ -36,6 +39,7 @@ class NearbyMesh(
     val nodeId: ByteArray = hexToBytes(publicKeyHex).copyOf(NODE_ID_LENGTH)
 
     private val bridges = Collections.synchronizedSet(mutableSetOf<LinkBridge>())
+    @Volatile
     private var wifiAware: WifiAwareTransport? = null
     private var ble: BleTransport? = null
     @Volatile
@@ -83,6 +87,12 @@ class NearbyMesh(
         bridges.any { it.peerId == peerId && (transport == null || it.transport == transport) }
     }
 
+    /** A peer that BLE sees: look for it over Wi-Fi Aware too, unless linked there already. */
+    fun seenNearby(peerId: String) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || hasLink(peerId, WIFI_AWARE)) return
+        wifiAware?.rediscover(peerId)
+    }
+
     /**
      * Bridges a connected transport stream into the local Yggdrasil node.
      * [peerId] is known on the opening side only. Returns false and closes the
@@ -113,6 +123,12 @@ class NearbyMesh(
         }
         bridges.add(bridge)
         bridge.start()
+        // Yggdrasil does not prefer the faster of two links to the same peer,
+        // so a Wi-Fi Aware link replaces a BLE one; BLE comes back if it drops.
+        if (transport == WIFI_AWARE && peerId != null) {
+            synchronized(bridges) { bridges.filter { it.peerId == peerId && it.transport == BLE } }
+                .forEach { it.close() }
+        }
         return true
     }
 
